@@ -1,6 +1,7 @@
 using Monsterday.Collection;
 using Monsterday.Data;
 using Monsterday.Economy;
+using Monsterday.Gameplay;
 using Monsterday.Gacha;
 using Monsterday.Save;
 using UnityEngine;
@@ -35,12 +36,16 @@ namespace Monsterday.Core
             Profile = save.LoadOrCreate();
             var wallet = new WalletService(Profile);
             var collection = new MonsterCollectionService(Profile);
+            var inventory = new InventoryService(Profile);
+            var questService = new QuestService(Profile, wallet, save);
             var gacha = new GachaService(monsterCatalog, Profile, wallet, collection, save);
 
             ServiceRegistry.Register<ISaveService>(save);
             ServiceRegistry.Register(Profile);
             ServiceRegistry.Register(wallet);
             ServiceRegistry.Register(collection);
+            ServiceRegistry.Register(inventory);
+            ServiceRegistry.Register(questService);
             ServiceRegistry.Register(gacha);
         }
 

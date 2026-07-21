@@ -18,8 +18,12 @@ namespace Monsterday.Combat
         [SerializeField] private UnityEvent knockedOut;
         private MonsterCombatant target;
         private int currentHealth;
+
+        public UnityEvent KnockedOut => knockedOut;
         private float nextAttackTime;
 
+        public int CurrentHealth => currentHealth;
+        public int MaxHealth => definition?.BaseStats.health ?? 0;
         public bool IsAlive => currentHealth > 0;
         public MonsterDefinition Definition => definition;
 
@@ -30,7 +34,20 @@ namespace Monsterday.Combat
 
         private void Update()
         {
-            if (!IsAlive || target == null || !target.IsAlive || definition == null) return;
+            if (!IsAlive || definition == null) return;
+
+            if (target == null && !gameObject.CompareTag("Player"))
+            {
+                var player = FindObjectOfType<PlayerController>();
+                if (player != null)
+                {
+                    var playerCombatant = player.GetComponent<MonsterCombatant>();
+                    if (playerCombatant != null && playerCombatant.IsAlive)
+                        target = playerCombatant;
+                }
+            }
+
+            if (target == null || !target.IsAlive) return;
             var offset = target.transform.position - transform.position;
             offset.y = 0f;
             if (offset.sqrMagnitude > 2.25f)

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Monsterday.Core;
 using Monsterday.Data;
+using Monsterday.Gameplay;
 using Monsterday.UI;
 using UnityEditor;
 using UnityEditor.Events;
@@ -36,9 +37,10 @@ namespace Monsterday.Editor
             var catalog = CreateMonsterData();
             var banner = CreateBanner();
             CreateMainMenuScene(catalog, banner);
+            MonsterdayGameplaySetup.BuildExplorationScene(catalog, banner);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            EditorUtility.DisplayDialog("Monsterday", "Die spielbare Starter-Szene wurde erstellt. Öffne Assets/Monsterday/Scenes/MainMenu.unity und drücke Play.", "Los geht's");
+            EditorUtility.DisplayDialog("Monsterday", "Die spielbare Starter-Szene und die Exploration-Szene wurden erstellt. Öffne Assets/Monsterday/Scenes/MainMenu.unity und drücke Play.", "Los geht's");
         }
 
         [MenuItem("Monsterday/Setup/Validate Starter", priority = 2)]
@@ -49,6 +51,12 @@ namespace Monsterday.Editor
             if (AssetDatabase.LoadAssetAtPath<GachaBannerDefinition>(DataPath + "/Banner_Standard.asset") == null) missing.Add("Standardbanner");
             if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) == null) missing.Add("MainMenu-Szene");
             EditorUtility.DisplayDialog("Monsterday-Prüfung", missing.Count == 0 ? "Starter vollständig: Daten, Banner und Szene sind vorhanden." : "Fehlt: " + string.Join(", ", missing), "OK");
+        }
+
+        [InitializeOnLoadMethod]
+        private static void InitializeOnLoad()
+        {
+            EditorApplication.delayCall += EnsureProjectConfiguration;
         }
 
         private static void EnsureFolders()
@@ -67,6 +75,14 @@ namespace Monsterday.Editor
             CreateFolder(Root, "Localization");
         }
 
+        private static void EnsureProjectConfiguration()
+        {
+            EnsureFolders();
+            ConfigureProject();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+
         private static void ConfigureProject()
         {
             PlayerSettings.productName = "Monsterday";
@@ -75,17 +91,42 @@ namespace Monsterday.Editor
             PlayerSettings.colorSpace = ColorSpace.Linear;
             QualitySettings.vSyncCount = 0;
 
-            var pipelinePath = Root + "/Settings/Monsterday_Mobile_URP.asset";
-            var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(pipelinePath);
+            var pipeline = FindOrCreatePipelineAsset();
             if (pipeline == null)
             {
-                pipeline = ScriptableObject.CreateInstance<UniversalRenderPipelineAsset>();
-                pipeline.name = "Monsterday Mobile URP";
-                pipeline.LoadBuiltinRendererData(RendererType.UniversalRenderer);
-                AssetDatabase.CreateAsset(pipeline, pipelinePath);
+                Debug.LogError("Monsterday: Konnte kein Universal Render Pipeline Asset erstellen oder finden.");
+                return;
             }
+
             GraphicsSettings.defaultRenderPipeline = pipeline;
             QualitySettings.renderPipeline = pipeline;
+        }
+
+        private static UniversalRenderPipelineAsset FindOrCreatePipelineAsset()
+        {
+            var existingPipeline = FindExistingPipelineAsset();
+            if (existingPipeline != null) return existingPipeline;
+
+            var pipelinePath = Root + "/Settings/Monsterday_Mobile_URP.asset";
+            var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(pipelinePath);
+            if (pipeline != null) return pipeline;
+
+            pipeline = ScriptableObject.CreateInstance<UniversalRenderPipelineAsset>();
+            pipeline.name = "Monsterday Mobile URP";
+            pipeline.LoadBuiltinRendererData(RendererType.UniversalRenderer);
+            AssetDatabase.CreateAsset(pipeline, pipelinePath);
+            return pipeline;
+        }
+
+        private static UniversalRenderPipelineAsset FindExistingPipelineAsset()
+        {
+            foreach (var guid in AssetDatabase.FindAssets("t:UniversalRenderPipelineAsset"))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(path);
+                if (pipeline != null) return pipeline;
+            }
+            return null;
         }
 
         private static MonsterCatalog CreateMonsterData()
@@ -234,8 +275,16 @@ namespace Monsterday.Editor
 #endif
 
             EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+            AddSceneToBuildSettings(ScenePath);
             Selection.activeObject = AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath);
+        }
+
+        private static void AddSceneToBuildSettings(string scenePath)
+        {
+            var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            if (scenes.Exists(scene => scene.path == scenePath)) return;
+            scenes.Add(new EditorBuildSettingsScene(scenePath, true));
+            EditorBuildSettings.scenes = scenes.ToArray();
         }
 
         private static void BuildHomePanel(Transform parent)
@@ -246,7 +295,10 @@ namespace Monsterday.Editor
             SetAnchors(subtitle.rectTransform, new Vector2(.08f, .64f), new Vector2(.92f, .72f));
             var adventure = CreateButton(parent, "Adventure", "ABENTEUER STARTEN", AccentPurple);
             SetAnchors(adventure.GetComponent<RectTransform>(), new Vector2(.16f, .34f), new Vector2(.84f, .44f));
-            adventure.interactable = false;
+            adventure.interactable = true;
+            var loader = adventure.gameObject.AddComponent<AdventureSceneLoader>();
+            loader.SceneName = "Exploration";
+            adventure.onClick.AddListener(loader.LoadScene);
             var note = CreateText(parent, "Milestone", "UNITY-6 STARTER · MOBILE UI · OFFLINE SAVE · GACHA-KERN", 20, TextAnchor.MiddleCenter, Gold);
             SetAnchors(note.rectTransform, new Vector2(.08f, .22f), new Vector2(.92f, .31f));
         }
